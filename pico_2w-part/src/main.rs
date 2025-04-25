@@ -67,14 +67,6 @@ async fn main(spawner: Spawner) {
     let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
 
     socket.set_timeout(Some(Duration::from_secs(1000)));
-    info!("Listening on TCP:6000...");
-    if let Err(e) = socket.accept(6000).await {
-        warn!("accept error: {:?}", e);
-        return;
-    }
-
-    info!("Received connection from {:?}", socket.remote_endpoint());
-    let mut buf = [0; 4096];
 
     //Config pwm and servo
     // Configure PWM for servo control
@@ -102,55 +94,71 @@ async fn main(spawner: Spawner) {
         servo_config.clone()
     );
 
-    // State variable to track whether the barrier is open or closed
-    let mut is_open = false;
-
     loop {
-        // Read data from the socket
-        let n = match socket.read(&mut buf).await {
-            Ok(0) => {
-                warn!("read EOF");
-                break;
-            }
-            Ok(n) => n,
-            Err(e) => {
-                warn!("read error: {:?}", e);
-                break;
-            }
-        };
-    
-        // Parse the received data as a command
-        if let Ok(command) = core::str::from_utf8(&buf[..n]) {
-            match command.trim() {
-                "100" => {
-                    if !is_open {
-                        // Open the barrier
-                        servo_config.compare_a = min_pulse * 2; // Open position
-                        servo.set_config(&servo_config);
-                        info!("Barrier opened");
-                        is_open = true;
-                    } else {
-                        info!("Barrier is already open");
-                    }
-                }
-                "90" => {
-                    if is_open {
-                        // Close the barrier manually
-                        servo_config.compare_a = max_pulse; // Closed position
-                        servo.set_config(&servo_config);
-                        info!("Barrier closed manually");
-                        is_open = false;
-                    } else {
-                        info!("Barrier is already closed");
-                    }
-                }
-                _ => {
-                    warn!("Unknown command received: {}", command);
-                }
-            }
+        // Accept a new connection
+        info!("Listening on TCP:6000...");
+        let mut rx_buffer = [0; 4096]; // Move buffer initialization here
+        let mut tx_buffer = [0; 4096]; // Move buffer initialization here
+        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+
+        if let Err(e) = socket.accept(6000).await {
+            warn!("accept error: {:?}", e);
+            continue; // Continue to the next iteration to accept a new connection
         }
-    
-        // Add a small delay to prevent busy looping
-        Timer::after(Duration::from_millis(100)).await;
+
+        info!("Received connection from {:?}", socket.remote_endpoint());
+        let mut buf = [0; 4096];
+
+        // State variable to track whether the barrier is open or closed
+        let mut is_open = false;
+
+        loop {
+            // Read data from the socket
+            let n = match socket.read(&mut buf).await {
+                Ok(0) => {
+                    warn!("read EOF");
+                    break; // Exit the inner loop to accept a new connection
+                }
+                Ok(n) => n,
+                Err(e) => {
+                    warn!("read error: {:?}", e);
+                    break; // Exit the inner loop to accept a new connection
+                }
+            };
+
+            // Parse the received data as a command
+            if let Ok(command) = core::str::from_utf8(&buf[..n]) {
+                match command.trim() {
+                    "100" => {
+                        if !is_open {
+                            // Open the barrier
+                            servo_config.compare_a = min_pulse * 2; // Open position
+                            servo.set_config(&servo_config);
+                            info!("Barrier opened");
+                            is_open = true;
+                        } else {
+                            info!("Barrier is already open");
+                        }
+                    }
+                    "90" => {
+                        if is_open {
+                            // Close the barrier manually
+                            servo_config.compare_a = max_pulse; // Closed position
+                            servo.set_config(&servo_config);
+                            info!("Barrier closed manually");
+                            is_open = false;
+                        } else {
+                            info!("Barrier is already closed");
+                        }
+                    }
+                    _ => {
+                        warn!("Unknown command received: {}", command);
+                    }
+                }
+            }
+
+            // Add a small delay to prevent busy looping
+            Timer::after(Duration::from_millis(100)).await;
+        }
     }
 }
