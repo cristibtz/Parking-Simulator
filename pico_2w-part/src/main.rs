@@ -7,7 +7,7 @@ use embassy_time::{Duration, Timer};
 use embassy_net::tcp::TcpSocket;
 use static_cell::StaticCell;
 use cyw43::JoinOptions;
-use embassy_rp::pwm::{Config as PwmConfig, Pwm};
+use embassy_rp::{gpio::{Output, Level}, pwm::{Config as PwmConfig, Pwm}};
 use fixed::traits::ToFixed;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -24,6 +24,10 @@ const WIFI_PASSWORD: &str = "testing123";
 async fn main(spawner: Spawner) {
 
     let peripherals = embassy_rp::init(Default::default());
+
+    let mut barrier_led_open = Output::new(peripherals.PIN_16, Level::Low);
+    let mut barrier_led_closed = Output::new(peripherals.PIN_17, Level::High);
+
 
     // Init WiFi driver
     let (net_device, mut control) = embassy_lab_utils::init_wifi!(&spawner, peripherals).await;
@@ -100,18 +104,23 @@ async fn main(spawner: Spawner) {
         let mut rx_buffer = [0; 4096]; // Move buffer initialization here
         let mut tx_buffer = [0; 4096]; // Move buffer initialization here
         let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-
+    
         if let Err(e) = socket.accept(6000).await {
             warn!("accept error: {:?}", e);
             continue; // Continue to the next iteration to accept a new connection
         }
-
+    
         info!("Received connection from {:?}", socket.remote_endpoint());
         let mut buf = [0; 4096];
-
-        // State variable to track whether the barrier is open or closed
-        let mut is_open = false;
-
+    
+        // State variables
+        let mut is_open = false; // Tracks whether the barrier is open
+        let mut is_locked = false; // Tracks whether the barrier is locked
+    
+        // Ensure the closed LED is red by default
+        barrier_led_closed.set_high(); // Red LED ON
+        barrier_led_open.set_low();    // Green LED OFF
+    
         loop {
             // Read data from the socket
             let n = match socket.read(&mut buf).await {
@@ -125,30 +134,47 @@ async fn main(spawner: Spawner) {
                     break; // Exit the inner loop to accept a new connection
                 }
             };
-
+    
             // Parse the received data as a command
             if let Ok(command) = core::str::from_utf8(&buf[..n]) {
                 match command.trim() {
                     "100" => {
-                        if !is_open {
+                        if is_locked {
+                            info!("Barrier is locked. Cannot open.");
+                        } else if !is_open {
                             // Open the barrier
                             servo_config.compare_a = min_pulse * 2; // Open position
                             servo.set_config(&servo_config);
                             info!("Barrier opened");
                             is_open = true;
+    
+                            // Update LEDs: Green ON, Red OFF
+                            barrier_led_open.set_high();  // Green LED ON
+                            barrier_led_closed.set_low(); // Red LED OFF
+    
+                            // Automatically close the barrier after 5 seconds
+                            Timer::after(Duration::from_secs(5)).await;
+                            servo_config.compare_a = max_pulse; // Closed position
+                            servo.set_config(&servo_config);
+                            info!("Barrier closed automatically");
+                            is_open = false;
+    
+                            // Update LEDs: Red ON, Green OFF
+                            barrier_led_open.set_low();   // Green LED OFF
+                            barrier_led_closed.set_high(); // Red LED ON
                         } else {
                             info!("Barrier is already open");
                         }
                     }
                     "90" => {
-                        if is_open {
-                            // Close the barrier manually
-                            servo_config.compare_a = max_pulse; // Closed position
-                            servo.set_config(&servo_config);
-                            info!("Barrier closed manually");
-                            is_open = false;
+                        if is_locked {
+                            // Unlock the barrier
+                            is_locked = false;
+                            info!("Barrier unlocked");
                         } else {
-                            info!("Barrier is already closed");
+                            // Lock the barrier
+                            is_locked = true;
+                            info!("Barrier locked");
                         }
                     }
                     _ => {
@@ -156,7 +182,7 @@ async fn main(spawner: Spawner) {
                     }
                 }
             }
-
+    
             // Add a small delay to prevent busy looping
             Timer::after(Duration::from_millis(100)).await;
         }
