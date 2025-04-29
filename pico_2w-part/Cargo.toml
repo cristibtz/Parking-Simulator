@@ -4,7 +4,7 @@
 # This table defines the package keys. 
 [package]
 # The package name
-name = "lab-2025"
+name = "pico_2w-part"
 # Write your name and email here!
 authors = ["Your Name <your.email@domain>"]
 # Inherited from the workspace
