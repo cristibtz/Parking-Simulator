@@ -1,0 +1,25 @@
+[package]
+name = "embassy-lab-utils"
+edition = "2021"
+
+[dependencies]
+embassy-rp = { git = "https://github.com/embassy-rs/embassy", features = ["defmt", "unstable-pac", "time-driver", "critical-section-impl", "rp2040"] }
+
+# Async/await executor
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", features = ["arch-cortex-m", "executor-thread", "executor-interrupt", "defmt"] }
+
+# Statically allocated, initialized at runtime cell
+static_cell = "2.1"
+
+# Defmt support
+defmt = "0.3"
+
+# WiFi Chip
+cyw43 = { git = "https://github.com/embassy-rs/embassy", features = ["defmt", "firmware-logs"] }
+cyw43-pio = { git = "https://github.com/embassy-rs/embassy", features = ["defmt"] }
+
+# Random number generators
+rand = { version = "0.8.5", default-features = false }
+
+# Network stack
+embassy-net = { git = "https://github.com/embassy-rs/embassy", features = ["defmt", "tcp", "udp", "raw", "dhcpv4", "medium-ethernet", "dns"] }

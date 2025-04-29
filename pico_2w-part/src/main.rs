@@ -40,7 +40,7 @@ async fn main(spawner: Spawner) {
 
     //Connect to WiFi
     loop {
-        match control.join(WIFI_NETWORK, JoinOptions::new_open()).await {
+        match control.join(WIFI_NETWORK, JoinOptions::new(WIFI_PASSWORD.as_bytes())).await {
             Ok(_) => {
                 info!("Successfully joined WiFi network: {}", WIFI_NETWORK);
 
