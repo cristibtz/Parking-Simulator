@@ -7,7 +7,7 @@ use embassy_time::{Duration, Timer};
 use embassy_net::tcp::TcpSocket;
 use static_cell::StaticCell;
 use cyw43::JoinOptions;
-use embassy_rp::{gpio::{Output, Level}, pwm::{Config as PwmConfig, Pwm}};
+use embassy_rp::{gpio::{AnyPin, Input, Level, Output, Pin, Pull}, pwm::{Config as PwmConfig, Pwm}};
 use fixed::traits::ToFixed;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -20,13 +20,36 @@ static RESOURCES: StaticCell<StackResources<SOCK>> = StaticCell::<StackResources
 const WIFI_NETWORK: &str = "desk";
 const WIFI_PASSWORD: &str = "testing123";
 
+#[embassy_executor::task(pool_size = 4)]
+async fn sensor_task(pin: AnyPin) {
+    let sensor = Input::new(pin, Pull::None);
+
+    loop {
+        
+        if sensor.is_high() {
+            info!("Occupied");
+        } else {
+            info!("Free");
+        }
+        Timer::after(Duration::from_secs(1)).await;
+    }
+}
+
+
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
 
     let peripherals = embassy_rp::init(Default::default());
 
+    // Barrier LED pins
     let mut barrier_led_open = Output::new(peripherals.PIN_16, Level::Low);
     let mut barrier_led_closed = Output::new(peripherals.PIN_17, Level::High);
+
+    //Motion sensor pin
+    let pin_15_clone = peripherals.PIN_15.degrade();
+
+    //Start the sensor task
+    spawner.spawn(sensor_task(pin_15_clone)).unwrap();
 
 
     // Init WiFi driver
