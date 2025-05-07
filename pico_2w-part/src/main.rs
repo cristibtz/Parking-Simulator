@@ -2,7 +2,7 @@
 #![no_main]
 
 use embassy_executor::Spawner;
-use embassy_net::StackResources;
+use embassy_net::{IpAddress, IpEndpoint, Stack, StackResources};
 use embassy_time::{Duration, Timer};
 use embassy_net::tcp::TcpSocket;
 use static_cell::StaticCell;
@@ -10,31 +10,56 @@ use cyw43::JoinOptions;
 use embassy_rp::{gpio::{AnyPin, Input, Level, Output, Pin, Pull}, pwm::{Config as PwmConfig, Pwm}};
 use fixed::traits::ToFixed;
 use {defmt_rtt as _, panic_probe as _};
+use heapless::String; 
 
 use defmt::*;
 
 mod irqs;
 
-const SOCK: usize = 4;
+const SOCK: usize = 8;
 static RESOURCES: StaticCell<StackResources<SOCK>> = StaticCell::<StackResources<SOCK>>::new();
 const WIFI_NETWORK: &str = "desk";
 const WIFI_PASSWORD: &str = "testing123";
 
 #[embassy_executor::task(pool_size = 4)]
-async fn sensor_task(pin: AnyPin) {
+async fn sensor_task(pin: AnyPin, stack: Stack<'static>, sensorNo: u64) {
     let sensor = Input::new(pin, Pull::None);
 
+    let mut tx_buffer = [0; 128];
+    let mut rx_buffer = [0; 128];
+
+    let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+    socket.set_timeout(Some(Duration::from_secs(10)));
+
     loop {
-        
+        // Check the sensor state
+        let mut state: String<128> = String::new();
         if sensor.is_high() {
-            info!("Occupied");
+            let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Occupied\n", sensorNo));
         } else {
-            info!("Free");
+            let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Not Occupied\n", sensorNo));
         }
-        Timer::after(Duration::from_secs(1)).await;
+
+        // Connect to the TCP server
+        if let Err(e) = socket.connect(IpEndpoint::new(IpAddress::v4(192, 168, 23, 33), 6000)).await {
+            warn!("accept error: {:?}", e);
+            continue;
+        }
+
+        let buffer = state.as_bytes();
+        let n = socket.write(buffer).await;
+        if let Err(e) = n {
+            warn!("write error: {:?}", e);
+            continue;
+        }
+        info!("Sent state: {}", state.as_str());
+
+        socket.close();
+
+        // Wait for 15 seconds before sending the next update
+        Timer::after(Duration::from_secs(3)).await;
     }
 }
-
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -47,10 +72,6 @@ async fn main(spawner: Spawner) {
 
     //Motion sensor pin
     let pin_15_clone = peripherals.PIN_15.degrade();
-
-    //Start the sensor task
-    spawner.spawn(sensor_task(pin_15_clone)).unwrap();
-
 
     // Init WiFi driver
     let (net_device, mut control) = embassy_lab_utils::init_wifi!(&spawner, peripherals).await;
@@ -86,6 +107,10 @@ async fn main(spawner: Spawner) {
             }
         }
     }
+
+    //Start the sensor task
+    let sensor_no:u64 = 1;
+    spawner.spawn(sensor_task(pin_15_clone, stack, sensor_no)).unwrap(); 
 
     // Start TCP server
 
