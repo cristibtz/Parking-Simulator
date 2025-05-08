@@ -6,14 +6,70 @@ use embassy_executor::Spawner;
 use embassy_rp::gpio::{Input, Pull};
 use embassy_rp::Peripherals;
 use embassy_time::{Duration, Instant, Timer};
+use embassy_net::StackResources;
+use embassy_net::tcp::TcpSocket;
+use cyw43::JoinOptions;
+use embassy_net::IpAddress;
+use embassy_net::IpEndpoint;
+use static_cell::StaticCell;
+use heapless::String;
+use embedded_io_async::Write;
+use fixed::traits::ToFixed;
+
 use {defmt_rtt as _, panic_probe as _};
+
+mod irqs;
+
+const SOCK: usize = 4;
+static RESOURCES: StaticCell<StackResources<SOCK>> = StaticCell::<StackResources<SOCK>>::new();
+const WIFI_NETWORK: &str = "desk";
+const WIFI_PASSWORD: &str = "testing123";
 
 const MAX_PULSES: usize = 70;
 
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
-    let p = embassy_rp::init(Default::default());
-    let mut ir_sensor = Input::new(p.PIN_15, Pull::None);
+async fn main(spawner: Spawner) {
+    let peripherals = embassy_rp::init(Default::default());
+    let mut ir_sensor = Input::new(peripherals.PIN_15, Pull::None);
+
+    // Init WiFi driver
+    let (net_device, mut control) = embassy_lab_utils::init_wifi!(&spawner, peripherals).await;
+
+    // Default config for dynamic IP address
+    let config = embassy_net::Config::dhcpv4(Default::default());
+
+    // Init network stack
+    let stack = embassy_lab_utils::init_network_stack(&spawner, net_device, &RESOURCES, config);
+
+    loop {
+        match control
+            .join(WIFI_NETWORK, JoinOptions::new(WIFI_PASSWORD.as_bytes()))
+            .await
+        {
+            Ok(_) => {
+                // Successfully joined the WiFi network
+                info!("Successfully joined WiFi network: {}", WIFI_NETWORK);
+
+                // Wait until the network stack is configured
+                loop {
+                    if stack.is_config_up() {
+                        if let Some(ip_config) = stack.config_v4() {
+                            info!(
+                                "Assigned IP address: {}",
+                                ip_config.address.address()
+                            );
+                            break;
+                        }
+                    }
+                    Timer::after(Duration::from_millis(100)).await;
+                }
+                break;
+            }
+            Err(err) => {
+                info!("join failed with status={}", err.status);
+            }
+        }
+    }
 
     info!("Press a button on the remote...");
 
@@ -43,10 +99,35 @@ async fn main(_spawner: Spawner) {
             start_time = now;
         }
 
+        let mut tx_buffer = [0; 128];
+        let mut rx_buffer = [0; 128];
+
+        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+        socket.set_timeout(Some(Duration::from_secs(5)));
+
         match decode_nec(&pulses[..count]) {
-            Some((addr, cmd)) => info!("✅ NEC Command: 0x{:02X} (Address: 0x{:02X})", cmd, addr),
+            Some((addr, cmd)) => {
+                info!("✅ NEC Command: 0x{:02X} (Address: 0x{:02X})", cmd, addr);
+
+                let data_to_send = "100";
+
+                // Connect to the TCP server
+                if let Err(e) = socket.connect(IpEndpoint::new(IpAddress::v4(192, 168, 23, 33), 6000)).await {
+                    warn!("accept error: {:?}", e);
+                    continue;
+                }
+                let buffer = data_to_send.as_bytes();
+
+                if let Err(e) = socket.write_all(&buffer).await {
+                    warn!("Failed to send data: {:?}", e);
+                } else {
+                    info!("Sent command: 0x{:02X}", cmd);
+                }
+            }
             None => warn!("❌ Invalid NEC signal"),
         }
+
+        socket.close();
 
         Timer::after(Duration::from_millis(300)).await;
     }

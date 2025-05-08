@@ -27,7 +27,6 @@ async fn main(spawner: Spawner) {
 
     let peripherals = embassy_rp::init(Default::default());
 
-
    // Init WiFi driver
    let (net_device, mut control) = embassy_lab_utils::init_wifi!(&spawner, peripherals).await;
 
