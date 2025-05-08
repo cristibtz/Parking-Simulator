@@ -8,7 +8,7 @@ use embassy_rp::Peripherals;
 use embassy_time::{Duration, Instant, Timer};
 use {defmt_rtt as _, panic_probe as _};
 
-const MAX_PULSES: usize = 200;
+const MAX_PULSES: usize = 70;
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -48,7 +48,7 @@ async fn main(_spawner: Spawner) {
             None => warn!("❌ Invalid NEC signal"),
         }
 
-        Timer::after(Duration::from_millis(1000)).await;
+        Timer::after(Duration::from_millis(300)).await;
     }
 }
 
