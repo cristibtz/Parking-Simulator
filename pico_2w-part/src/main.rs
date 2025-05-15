@@ -23,41 +23,46 @@ const WIFI_PASSWORD: &str = "testing123";
 
 #[embassy_executor::task(pool_size = 4)]
 async fn sensor_task(pin: AnyPin, stack: Stack<'static>, sensor_no: u64) {
-    let sensor = Input::new(pin, Pull::None);
-
-    let mut tx_buffer = [0; 128];
-    let mut rx_buffer = [0; 128];
-
-    let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-    socket.set_timeout(Some(Duration::from_secs(10)));
+    let sensor = Input::new(pin, Pull::Up);
 
     loop {
         // Check the sensor state
         let mut state: String<128> = String::new();
         if sensor.is_high() {
-            let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Occupied\n", sensor_no));
+            let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Occupied", sensor_no));
         } else {
-            let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Not Occupied\n", sensor_no));
+            let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Not Occupied", sensor_no));
         }
+
+        // Create a new TcpSocket for each connection attempt
+        let mut tx_buffer = [0; 128];
+        let mut rx_buffer = [0; 128];
+        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+        socket.set_timeout(Some(Duration::from_secs(10)));
 
         // Connect to the TCP server
-        if let Err(e) = socket.connect(IpEndpoint::new(IpAddress::v4(192, 168, 23, 155), 6000)).await {
-            warn!("accept error: {:?}", e);
-            continue;
+        match socket.connect(IpEndpoint::new(IpAddress::v4(192, 168, 23, 41), 6000)).await {
+            Ok(_) => {
+                info!("Connected to server");
+
+                // Send the sensor state
+                let buffer = state.as_bytes();
+                if let Err(e) = socket.write(buffer).await {
+                    warn!("write error: {:?}", e);
+                } else {
+                    info!("Sent state: {}", state.as_str());
+                }
+
+                // Close the socket
+                socket.close();
+            }
+            Err(e) => {
+                warn!("connect error: {:?}", e);
+            }
         }
 
-        let buffer = state.as_bytes();
-        let n = socket.write(buffer).await;
-        if let Err(e) = n {
-            warn!("write error: {:?}", e);
-            continue;
-        }
-        info!("Sent state: {}", state.as_str());
-
-        socket.close();
-
-        // Wait for 15 seconds before sending the next update
-        Timer::after(Duration::from_secs(3)).await;
+        // Wait before checking the sensor state again
+        Timer::after(Duration::from_secs(1)).await;
     }
 }
 
@@ -71,7 +76,7 @@ async fn main(spawner: Spawner) {
     let mut barrier_led_closed = Output::new(peripherals.PIN_17, Level::High);
 
     //Motion sensor pin
-    let pin_15_clone = peripherals.PIN_15.degrade();
+    let pin_14_clone = peripherals.PIN_14.degrade();
 
     // Init WiFi driver
     let (net_device, mut control) = embassy_lab_utils::init_wifi!(&spawner, peripherals).await;
@@ -110,7 +115,7 @@ async fn main(spawner: Spawner) {
 
     //Start the sensor task
     let sensor_no:u64 = 1;
-    //spawner.spawn(sensor_task(pin_15_clone, stack, sensor_no)).unwrap(); 
+    spawner.spawn(sensor_task(pin_14_clone, stack, sensor_no)).unwrap(); 
 
     // Start TCP server
 
