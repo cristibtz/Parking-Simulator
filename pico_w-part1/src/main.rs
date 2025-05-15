@@ -2,110 +2,61 @@
 #![no_main]
 #![allow(async_fn_in_trait)]
 
-use core::str::from_utf8;
+use core::fmt::Write;
 
-use cyw43::JoinOptions;
 use defmt::*;
-use embassy_net::StackResources;
 use embassy_executor::Spawner;
-use embassy_net::tcp::TcpSocket;
-use embassy_time::{Duration, Timer};
-use embedded_io_async::Write;
-use static_cell::StaticCell;
+use embassy_rp::bind_interrupts;
+use embassy_rp::i2c::{self, Config as I2cConfig};
+use embedded_graphics::mono_font::ascii::FONT_6X10;
+use embedded_graphics::mono_font::MonoTextStyle;
+use embedded_graphics::pixelcolor::BinaryColor;
+use embedded_graphics::text::Text;
+use ssd1306::prelude::*;
+use ssd1306::size::DisplaySize128x64;
+use ssd1306::I2CDisplayInterface;
+use ssd1306::Ssd1306;
+use embedded_graphics::draw_target::DrawTarget;
+use embedded_graphics::Drawable;
+use embedded_graphics::prelude::Point;
 use {defmt_rtt as _, panic_probe as _};
 
-mod irqs;
-
-const SOCK: usize = 4;
-static RESOURCES: StaticCell<StackResources<SOCK>> = StaticCell::<StackResources<SOCK>>::new();
-const WIFI_NETWORK: &str = "desk";
-const WIFI_PASSWORD: &str = "testing123";
+bind_interrupts!(struct Irqs {
+    I2C0_IRQ => embassy_rp::i2c::InterruptHandler<embassy_rp::peripherals::I2C0>;
+});
 
 #[embassy_executor::main]
-async fn main(spawner: Spawner) {
-    info!("Hello World!");
+async fn main(_spawner: Spawner) {
+    info!("Starting...");
 
     let peripherals = embassy_rp::init(Default::default());
 
-   // Init WiFi driver
-   let (net_device, mut control) = embassy_lab_utils::init_wifi!(&spawner, peripherals).await;
+    // Configure I2C for SSD1306 OLED Display
+    let i2c = i2c::I2c::new_async(
+        peripherals.I2C0,
+        peripherals.PIN_5, //scl 
+        peripherals.PIN_4, //sda
+        Irqs,
+        I2cConfig::default(),
+    );
 
-   // Default config for dynamic IP address
-   let config = embassy_net::Config::dhcpv4(Default::default());
+    // Initialize SSD1306 OLED Display
+    let interface = I2CDisplayInterface::new(i2c);
+    
+    let mut display: Ssd1306<_, _, _> = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
+        .into_buffered_graphics_mode();
+        display.init().unwrap();
+    
+    display.clear(BinaryColor::Off).unwrap();
+    // Draw "Hello, World!" on the display
+    let text_style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+    Text::new("Hello, World!", Point::new(0, 10), text_style)
+        .draw(&mut display)
+        .unwrap();
 
-   // Init network stack
-   let stack = embassy_lab_utils::init_network_stack(&spawner, net_device, &RESOURCES, config);
-
-    loop {
-        match control
-            .join(WIFI_NETWORK, JoinOptions::new(WIFI_PASSWORD.as_bytes()))
-            .await
-        {
-            Ok(_) => {
-                // Successfully joined the WiFi network
-                info!("Successfully joined WiFi network: {}", WIFI_NETWORK);
-
-                // Wait until the network stack is configured
-                loop {
-                    if stack.is_config_up() {
-                        if let Some(ip_config) = stack.config_v4() {
-                            info!(
-                                "Assigned IP address: {}",
-                                ip_config.address.address()
-                            );
-                            break;
-                        }
-                    }
-                    Timer::after(Duration::from_millis(100)).await;
-                }
-                break;
-            }
-            Err(err) => {
-                info!("join failed with status={}", err.status);
-            }
-        }
-    }
-
-    let mut rx_buffer = [0; 4096];
-    let mut tx_buffer = [0; 4096];
-    let mut buf = [0; 4096];
+    display.flush().unwrap();
 
     loop {
-        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-        socket.set_timeout(Some(Duration::from_secs(10)));
-
-        control.gpio_set(0, false).await;
-        info!("Listening on TCP:1234...");
-        if let Err(e) = socket.accept(1234).await {
-            warn!("accept error: {:?}", e);
-            continue;
-        }
-
-        info!("Received connection from {:?}", socket.remote_endpoint());
-        control.gpio_set(0, true).await;
-
-        loop {
-            let n = match socket.read(&mut buf).await {
-                Ok(0) => {
-                    warn!("read EOF");
-                    break;
-                }
-                Ok(n) => n,
-                Err(e) => {
-                    warn!("read error: {:?}", e);
-                    break;
-                }
-            };
-
-            info!("rxd {}", from_utf8(&buf[..n]).unwrap());
-
-            match socket.write_all(&buf[..n]).await {
-                Ok(()) => {}
-                Err(e) => {
-                    warn!("write error: {:?}", e);
-                    break;
-                }
-            };
-        }
+        embassy_time::Timer::after(embassy_time::Duration::from_secs(1)).await;
     }
 }
