@@ -108,21 +108,32 @@ async fn main(spawner: Spawner) {
         match decode_nec(&pulses[..count]) {
             Some((addr, cmd)) => {
                 info!("✅ NEC Command: 0x{:02X} (Address: 0x{:02X})", cmd, addr);
-
-                let data_to_send = "100";
-
+        
+                // Determine the data to send based on the command
+                let data_to_send = if cmd == 0x45 {
+                    "100"
+                } else if cmd == 0x46 {
+                    "90"
+                } else {
+                    warn!("Unknown command: 0x{:02X}", cmd);
+                    continue; // Skip sending for unknown commands
+                };
+        
                 // Connect to the TCP server
-                if let Err(e) = socket.connect(IpEndpoint::new(IpAddress::v4(192, 168, 23, 33), 6000)).await {
-                    warn!("accept error: {:?}", e);
+                if let Err(e) = socket.connect(IpEndpoint::new(IpAddress::v4(192, 168, 23, 155), 6000)).await {
+                    warn!("Failed to connect to server: {:?}", e);
                     continue;
                 }
-                let buffer = data_to_send.as_bytes();
-
-                if let Err(e) = socket.write_all(&buffer).await {
+        
+                // Send the data as a single byte
+                if let Err(e) = socket.write_all(data_to_send.as_bytes()).await {
                     warn!("Failed to send data: {:?}", e);
                 } else {
-                    info!("Sent command: 0x{:02X}", cmd);
+                    info!("Sent data: {}", data_to_send);
                 }
+        
+                // Close the socket
+                socket.close();
             }
             None => warn!("❌ Invalid NEC signal"),
         }

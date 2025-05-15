@@ -22,7 +22,7 @@ const WIFI_NETWORK: &str = "desk";
 const WIFI_PASSWORD: &str = "testing123";
 
 #[embassy_executor::task(pool_size = 4)]
-async fn sensor_task(pin: AnyPin, stack: Stack<'static>, sensorNo: u64) {
+async fn sensor_task(pin: AnyPin, stack: Stack<'static>, sensor_no: u64) {
     let sensor = Input::new(pin, Pull::None);
 
     let mut tx_buffer = [0; 128];
@@ -35,13 +35,13 @@ async fn sensor_task(pin: AnyPin, stack: Stack<'static>, sensorNo: u64) {
         // Check the sensor state
         let mut state: String<128> = String::new();
         if sensor.is_high() {
-            let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Occupied\n", sensorNo));
+            let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Occupied\n", sensor_no));
         } else {
-            let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Not Occupied\n", sensorNo));
+            let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Not Occupied\n", sensor_no));
         }
 
         // Connect to the TCP server
-        if let Err(e) = socket.connect(IpEndpoint::new(IpAddress::v4(192, 168, 23, 33), 6000)).await {
+        if let Err(e) = socket.connect(IpEndpoint::new(IpAddress::v4(192, 168, 23, 155), 6000)).await {
             warn!("accept error: {:?}", e);
             continue;
         }
@@ -110,7 +110,7 @@ async fn main(spawner: Spawner) {
 
     //Start the sensor task
     let sensor_no:u64 = 1;
-    spawner.spawn(sensor_task(pin_15_clone, stack, sensor_no)).unwrap(); 
+    //spawner.spawn(sensor_task(pin_15_clone, stack, sensor_no)).unwrap(); 
 
     // Start TCP server
 
