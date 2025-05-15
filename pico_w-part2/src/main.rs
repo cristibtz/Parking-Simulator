@@ -14,7 +14,6 @@ use embassy_net::IpEndpoint;
 use static_cell::StaticCell;
 use heapless::String;
 use embedded_io_async::Write;
-use fixed::traits::ToFixed;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -41,23 +40,20 @@ async fn main(spawner: Spawner) {
     // Init network stack
     let stack = embassy_lab_utils::init_network_stack(&spawner, net_device, &RESOURCES, config);
 
+    // Connect to WiFi
     loop {
         match control
             .join(WIFI_NETWORK, JoinOptions::new(WIFI_PASSWORD.as_bytes()))
             .await
         {
             Ok(_) => {
-                // Successfully joined the WiFi network
                 info!("Successfully joined WiFi network: {}", WIFI_NETWORK);
 
                 // Wait until the network stack is configured
                 loop {
                     if stack.is_config_up() {
                         if let Some(ip_config) = stack.config_v4() {
-                            info!(
-                                "Assigned IP address: {}",
-                                ip_config.address.address()
-                            );
+                            info!("Assigned IP address: {}", ip_config.address.address());
                             break;
                         }
                     }
@@ -66,12 +62,19 @@ async fn main(spawner: Spawner) {
                 break;
             }
             Err(err) => {
-                info!("join failed with status={}", err.status);
+                info!("Join failed with status={}", err.status);
+                Timer::after(Duration::from_secs(1)).await;
             }
         }
     }
 
     info!("Press a button on the remote...");
+
+    let mut tx_buffer = [0; 128];
+    let mut rx_buffer = [0; 128];
+    let mut connected = false; // Track connection status
+    let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
+    socket.set_timeout(Some(Duration::from_secs(5)));
 
     loop {
         // Wait for falling edge to begin
@@ -87,7 +90,9 @@ async fn main(spawner: Spawner) {
             let now = Instant::now();
             pulses[count] = now.duration_since(start_time).as_micros() as u32;
             count += 1;
-            if count >= MAX_PULSES { break; }
+            if count >= MAX_PULSES {
+                break;
+            }
             start_time = now;
 
             // Wait for HIGH pulse
@@ -95,20 +100,16 @@ async fn main(spawner: Spawner) {
             let now = Instant::now();
             pulses[count] = now.duration_since(start_time).as_micros() as u32;
             count += 1;
-            if count >= MAX_PULSES { break; }
+            if count >= MAX_PULSES {
+                break;
+            }
             start_time = now;
         }
-
-        let mut tx_buffer = [0; 128];
-        let mut rx_buffer = [0; 128];
-
-        let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-        socket.set_timeout(Some(Duration::from_secs(5)));
 
         match decode_nec(&pulses[..count]) {
             Some((addr, cmd)) => {
                 info!("✅ NEC Command: 0x{:02X} (Address: 0x{:02X})", cmd, addr);
-        
+
                 // Determine the data to send based on the command
                 let data_to_send = if cmd == 0x45 {
                     "100"
@@ -118,29 +119,41 @@ async fn main(spawner: Spawner) {
                     warn!("Unknown command: 0x{:02X}", cmd);
                     continue; // Skip sending for unknown commands
                 };
-        
-                // Connect to the TCP server
-                if let Err(e) = socket.connect(IpEndpoint::new(IpAddress::v4(192, 168, 23, 155), 6000)).await {
-                    warn!("Failed to connect to server: {:?}", e);
-                    continue;
+
+                // Reconnect if not connected
+                if !connected {
+                    if let Err(e) = socket
+                        .connect(IpEndpoint::new(IpAddress::v4(192, 168, 23, 155), 6000))
+                        .await
+                    {
+                        warn!("Failed to connect to server: {:?}", e);
+                        connected = false;
+                        continue;
+                    } else {
+                        info!("Reconnected to server");
+                        connected = true;
+                    }
                 }
-        
-                // Send the data as a single byte
+
+                // Send the data
                 if let Err(e) = socket.write_all(data_to_send.as_bytes()).await {
                     warn!("Failed to send data: {:?}", e);
+                    connected = false; // Mark as disconnected if sending fails
                 } else {
                     info!("Sent data: {}", data_to_send);
                 }
-        
-                // Close the socket
-                socket.close();
+
+                // Close the socket if the command is "0"
+                if cmd == 0x47 {
+                    socket.close();
+                    connected = false;
+                    info!("Socket closed after sending command 0x47");
+                }
             }
             None => warn!("❌ Invalid NEC signal"),
         }
 
-        socket.close();
-
-        Timer::after(Duration::from_millis(300)).await;
+        Timer::after(Duration::from_millis(300)).await; // Wait before processing the next signal
     }
 }
 
@@ -158,14 +171,18 @@ fn decode_nec(pulses: &[u32]) -> Option<(u8, u8)> {
 
     // NEC data bits start at index 2 (after 9ms + 4.5ms header)
     for i in 0..32 {
-        let low = pulses[2 + i * 2];     // Should be ~562us
+        let low = pulses[2 + i * 2]; // Should be ~562us
         let high = pulses[2 + i * 2 + 1]; // 562us = 0, ~1.7ms = 1
 
         if !(400..700).contains(&low) {
             return None;
         }
 
-        let bit = if (1300..1900).contains(&high) { 1 } else if (400..700).contains(&high) { 0 } else {
+        let bit = if (1300..1900).contains(&high) {
+            1
+        } else if (400..700).contains(&high) {
+            0
+        } else {
             return None;
         };
 
