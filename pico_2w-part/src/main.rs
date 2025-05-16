@@ -28,7 +28,7 @@ async fn sensor_task(pin: AnyPin, stack: Stack<'static>, sensor_no: u64) {
     loop {
         // Check the sensor state
         let mut state: String<128> = String::new();
-        if sensor.is_high() {
+        if !sensor.is_high() {
             let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Occupied", sensor_no));
         } else {
             let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Not Occupied", sensor_no));
@@ -75,9 +75,6 @@ async fn main(spawner: Spawner) {
     let mut barrier_led_open = Output::new(peripherals.PIN_16, Level::Low);
     let mut barrier_led_closed = Output::new(peripherals.PIN_17, Level::High);
 
-    //Motion sensor pin
-    let pin_14_clone = peripherals.PIN_14.degrade();
-
     // Init WiFi driver
     let (net_device, mut control) = embassy_lab_utils::init_wifi!(&spawner, peripherals).await;
 
@@ -108,14 +105,28 @@ async fn main(spawner: Spawner) {
             }
             Err(err) => {
                 info!("Join failed with status={}", err.status);
-                Timer::after(Duration::from_secs(1)).await; 
+                Timer::after(Duration::from_secs(3)).await; 
             }
         }
     }
 
     //Start the sensor task
-    let sensor_no:u64 = 1;
-    spawner.spawn(sensor_task(pin_14_clone, stack, sensor_no)).unwrap(); 
+    let sensor_no1:u64 = 1;
+    let pin_14_clone = peripherals.PIN_14.degrade();
+    spawner.spawn(sensor_task(pin_14_clone, stack, sensor_no1)).unwrap(); 
+
+    let sensor_no2:u64 = 2;
+    let pin_15_clone = peripherals.PIN_15.degrade();
+    spawner.spawn(sensor_task(pin_15_clone, stack, sensor_no2)).unwrap();
+
+    let sensor_no3:u64 = 3;
+    let pin_18_clone = peripherals.PIN_18.degrade();
+    spawner.spawn(sensor_task(pin_18_clone, stack, sensor_no3)).unwrap();
+
+    let sensor_no4:u64 = 4;
+    let pin_19_clone = peripherals.PIN_19.degrade();
+    spawner.spawn(sensor_task(pin_19_clone, stack, sensor_no4)).unwrap();
+
 
     // Start TCP server
 
