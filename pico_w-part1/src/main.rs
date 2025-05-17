@@ -10,7 +10,7 @@ use cyw43::JoinOptions;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_net::tcp::TcpSocket;
-use embassy_net::{Stack, StackResources};
+use embassy_net::StackResources;
 use embassy_rp::bind_interrupts;
 use embassy_rp::i2c::{self, Config as I2cConfig};
 use embedded_graphics::mono_font::ascii::FONT_6X10;
@@ -25,7 +25,6 @@ use embedded_graphics::draw_target::DrawTarget;
 use embedded_graphics::Drawable;
 use embedded_graphics::prelude::Point;
 use static_cell::StaticCell;
-use heapless::String;
 use {defmt_rtt as _, panic_probe as _};
 
 bind_interrupts!(struct Irqs {
@@ -34,7 +33,7 @@ bind_interrupts!(struct Irqs {
 
 mod irqs;
 
-const SOCK: usize = 4;
+const SOCK: usize = 8;
 static RESOURCES: StaticCell<StackResources<SOCK>> = StaticCell::<StackResources<SOCK>>::new();
 const WIFI_NETWORK: &str = "desk";
 const WIFI_PASSWORD: &str = "testing123";
@@ -135,15 +134,15 @@ async fn main(spawner: Spawner) {
         let mut rx_buffer = [0; 4096];
         let mut tx_buffer = [0; 4096];
         let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
-
+    
         if let Err(e) = socket.accept(6000).await {
             warn!("accept error: {:?}", e);
             continue;
         }
-
+    
         info!("Received connection from {:?}", socket.remote_endpoint());
         let mut buf = [0; 4096];
-
+    
         loop {
             // Read data from the socket
             let n = match socket.read(&mut buf).await {
@@ -157,14 +156,14 @@ async fn main(spawner: Spawner) {
                     break;
                 }
             };
-
+    
             if let Ok(data) = core::str::from_utf8(&buf[..n]) {
                 info!("Received data: {}", data);
-
+    
                 if let Some((sensor_no, new_state)) = parse_sensor_data(data) {
                     if sensor_no >= 1 && sensor_no <= 4 {
                         let sensor_index = (sensor_no - 1) as usize;
-
+    
                         // Update parking lot state only if the sensor state changes
                         if sensor_states[sensor_index] != new_state {
                             match new_state {
@@ -179,10 +178,10 @@ async fn main(spawner: Spawner) {
                                     }
                                 }
                             }
-
+    
                             // Update the sensor state
                             sensor_states[sensor_index] = new_state;
-
+    
                             // Update the OLED display
                             display.clear(BinaryColor::Off).unwrap();
                             let text_style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
@@ -196,11 +195,14 @@ async fn main(spawner: Spawner) {
                                 .draw(&mut display)
                                 .unwrap();
                             display.flush().unwrap();
+    
+                            // Close the socket after processing the state change
+                            socket.close();
+                            break;
                         }
                     }
                 }
             }
-            Timer::after(Duration::from_millis(100)).await;
         }
     }
 }

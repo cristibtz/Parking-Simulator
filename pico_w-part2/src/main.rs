@@ -4,7 +4,6 @@
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_rp::gpio::{Input, Pull};
-use embassy_rp::Peripherals;
 use embassy_time::{Duration, Instant, Timer};
 use embassy_net::StackResources;
 use embassy_net::tcp::TcpSocket;
@@ -12,7 +11,6 @@ use cyw43::JoinOptions;
 use embassy_net::IpAddress;
 use embassy_net::IpEndpoint;
 use static_cell::StaticCell;
-use heapless::String;
 use embedded_io_async::Write;
 
 use {defmt_rtt as _, panic_probe as _};

@@ -22,7 +22,7 @@ const WIFI_NETWORK: &str = "desk";
 const WIFI_PASSWORD: &str = "testing123";
 
 #[embassy_executor::task(pool_size = 4)]
-async fn sensor_task(pin: AnyPin, stack: Stack<'static>, sensor_no: u64) {
+async fn sensor_task(pin: AnyPin, mut led_green: Output<'static>, mut led_red: Output<'static>, stack: Stack<'static>, sensor_no: u64) {
     let sensor = Input::new(pin, Pull::Up);
 
     loop {
@@ -30,8 +30,14 @@ async fn sensor_task(pin: AnyPin, stack: Stack<'static>, sensor_no: u64) {
         let mut state: String<128> = String::new();
         if !sensor.is_high() {
             let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Occupied", sensor_no));
+            // Turn on the red LED
+            led_red.set_high();
+            led_green.set_low();
         } else {
             let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Not Occupied", sensor_no));
+            // Turn off the red LED
+            led_red.set_low();
+            led_green.set_high();
         }
 
         // Create a new TcpSocket for each connection attempt
@@ -112,20 +118,22 @@ async fn main(spawner: Spawner) {
 
     //Start the sensor task
     let sensor_no1:u64 = 1;
+    let pin_27_clone = Output::new(peripherals.PIN_27, Level::Low);
+    let pin_26_clone = Output::new(peripherals.PIN_26, Level::Low);
     let pin_14_clone = peripherals.PIN_14.degrade();
-    spawner.spawn(sensor_task(pin_14_clone, stack, sensor_no1)).unwrap(); 
+    spawner.spawn(sensor_task(pin_14_clone, pin_26_clone, pin_27_clone, stack, sensor_no1)).unwrap(); 
 
     let sensor_no2:u64 = 2;
     let pin_15_clone = peripherals.PIN_15.degrade();
-    spawner.spawn(sensor_task(pin_15_clone, stack, sensor_no2)).unwrap();
+    //spawner.spawn(sensor_task(pin_15_clone, stack, sensor_no2)).unwrap();
 
     let sensor_no3:u64 = 3;
     let pin_18_clone = peripherals.PIN_18.degrade();
-    spawner.spawn(sensor_task(pin_18_clone, stack, sensor_no3)).unwrap();
+    //spawner.spawn(sensor_task(pin_18_clone, stack, sensor_no3)).unwrap();
 
     let sensor_no4:u64 = 4;
     let pin_19_clone = peripherals.PIN_19.degrade();
-    spawner.spawn(sensor_task(pin_19_clone, stack, sensor_no4)).unwrap();
+    //spawner.spawn(sensor_task(pin_19_clone, stack, sensor_no4)).unwrap();
 
 
     // Start TCP server
