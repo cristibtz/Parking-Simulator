@@ -124,17 +124,22 @@ async fn main(spawner: Spawner) {
     spawner.spawn(sensor_task(pin_14_clone, pin_26_clone, pin_27_clone, stack, sensor_no1)).unwrap(); 
 
     let sensor_no2:u64 = 2;
+    let pin_3_clone = Output::new(peripherals.PIN_3, Level::Low);
+    let pin_4_clone = Output::new(peripherals.PIN_4, Level::Low);
     let pin_15_clone = peripherals.PIN_15.degrade();
-    //spawner.spawn(sensor_task(pin_15_clone, stack, sensor_no2)).unwrap();
+    spawner.spawn(sensor_task(pin_15_clone, pin_3_clone, pin_4_clone, stack, sensor_no2)).unwrap();
 
     let sensor_no3:u64 = 3;
+    let pin_6_clone = Output::new(peripherals.PIN_6, Level::Low);
+    let pin_7_clone = Output::new(peripherals.PIN_7, Level::Low);
     let pin_18_clone = peripherals.PIN_18.degrade();
-    //spawner.spawn(sensor_task(pin_18_clone, stack, sensor_no3)).unwrap();
+    spawner.spawn(sensor_task(pin_18_clone, pin_6_clone, pin_7_clone, stack, sensor_no3)).unwrap();
 
     let sensor_no4:u64 = 4;
+    let pin_8_clone = Output::new(peripherals.PIN_8, Level::Low);
+    let pin_9_clone = Output::new(peripherals.PIN_9, Level::Low);
     let pin_19_clone = peripherals.PIN_19.degrade();
-    //spawner.spawn(sensor_task(pin_19_clone, stack, sensor_no4)).unwrap();
-
+    spawner.spawn(sensor_task(pin_19_clone, pin_8_clone, pin_9_clone, stack, sensor_no4)).unwrap();
 
     // Start TCP server
 
