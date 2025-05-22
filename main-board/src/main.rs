@@ -35,7 +35,7 @@ async fn sensor_task(pin: AnyPin, mut led_green: Output<'static>, mut led_red: O
             led_green.set_low();
         } else {
             let _ = core::fmt::write(&mut state, format_args!("Sensor {}: Not Occupied", sensor_no));
-            // Turn off the red LED
+            // Turn on the green LED
             led_red.set_low();
             led_green.set_high();
         }
@@ -116,7 +116,7 @@ async fn main(spawner: Spawner) {
         }
     }
 
-    //Start the sensor task
+    //Start the sensor tasks
     let sensor_no1:u64 = 1;
     let pin_27_clone = Output::new(peripherals.PIN_27, Level::Low);
     let pin_26_clone = Output::new(peripherals.PIN_26, Level::Low);
@@ -142,14 +142,12 @@ async fn main(spawner: Spawner) {
     spawner.spawn(sensor_task(pin_19_clone, pin_8_clone, pin_9_clone, stack, sensor_no4)).unwrap();
 
     // Start TCP server
-
     let mut rx_buffer = [0; 4096];
     let mut tx_buffer = [0; 4096];
     let mut socket = TcpSocket::new(stack, &mut rx_buffer, &mut tx_buffer);
 
     socket.set_timeout(Some(Duration::from_secs(1000)));
 
-    //Config pwm and servo
     // Configure PWM for servo control
     let mut servo_config: PwmConfig = Default::default();
 

@@ -141,14 +141,14 @@ async fn main(spawner: Spawner) {
                     info!("Sent data: {}", data_to_send);
                 }
 
-                // Close the socket if the command is "0"
+                // Close the socket if the command is "0x47"
                 if cmd == 0x47 {
                     socket.close();
                     connected = false;
                     info!("Socket closed after sending command 0x47");
                 }
             }
-            None => warn!("❌ Invalid NEC signal"),
+            None => warn!("Invalid NEC signal"),
         }
 
         Timer::after(Duration::from_millis(300)).await; // Wait before processing the next signal
