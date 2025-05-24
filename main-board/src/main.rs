@@ -221,7 +221,6 @@ async fn main(spawner: Spawner) {
                             servo_config.compare_a = min_pulse * 2; // Open position
                             servo.set_config(&servo_config);
                             info!("Barrier opened");
-                            is_open = true;
     
                             // Update LEDs: Green ON, Red OFF
                             barrier_led_open.set_high();  // Green LED ON
