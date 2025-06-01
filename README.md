@@ -2,6 +2,8 @@
 
 A hardware project programmed in Rust that simulates a parking system. The system includes a barrier controlled by a servo motor, which receives commands from an IR remote, and parking spots equipped with movement sensors. The project is built as part of the university Microprocessors' Architecture class.
 
+Link to docs: https://pmrust.pages.upb.ro/docs/fils_en/project/2025/cristian.branet
+
 ---
 
 ## Overview

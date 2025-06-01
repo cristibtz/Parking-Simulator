@@ -33,7 +33,7 @@ bind_interrupts!(struct Irqs {
 
 mod irqs;
 
-const SOCK: usize = 8;
+const SOCK: usize = 20;
 static RESOURCES: StaticCell<StackResources<SOCK>> = StaticCell::<StackResources<SOCK>>::new();
 const WIFI_NETWORK: &str = "desk";
 const WIFI_PASSWORD: &str = "testing123";
@@ -144,7 +144,6 @@ async fn main(spawner: Spawner) {
         let mut buf = [0; 4096];
     
         loop {
-            // Read data from the socket
             let n = match socket.read(&mut buf).await {
                 Ok(0) => {
                     warn!("read EOF");
@@ -164,7 +163,6 @@ async fn main(spawner: Spawner) {
                     if sensor_no >= 1 && sensor_no <= 4 {
                         let sensor_index = (sensor_no - 1) as usize;
     
-                        // Update parking lot state only if the sensor state changes
                         if sensor_states[sensor_index] != new_state {
                             match new_state {
                                 SensorState::Occupied => {
@@ -179,31 +177,27 @@ async fn main(spawner: Spawner) {
                                 }
                             }
     
-                            // Update the sensor state
                             sensor_states[sensor_index] = new_state;
     
-                            // Update the OLED display
                             display.clear(BinaryColor::Off).unwrap();
                             let text_style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
                             let mut parking_status = heapless::String::<64>::new();
                             FmtWrite::write_fmt(
                                 &mut parking_status,
-                                format_args!("Free spaces: {}/{}", free_spaces, TOTAL_SPACES)
+                                format_args!("Free spaces: {}/{}", free_spaces, TOTAL_SPACES),
                             )
                             .unwrap();
                             Text::new(&parking_status, Point::new(0, 8), text_style)
                                 .draw(&mut display)
                                 .unwrap();
                             display.flush().unwrap();
-    
-                            // Close the socket after processing the state change
-                            socket.close();
-                            break;
                         }
                     }
                 }
             }
         }
+    
+        socket.close();
     }
 }
 
